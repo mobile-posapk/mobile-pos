@@ -1,0 +1,107 @@
+name: Update Branch 1 from Master
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  update-branch-1:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ============================================
+      # 1. CHECK OUT MASTER
+      # ============================================
+      - name: Checkout Master
+        uses: actions/checkout@v4
+        with:
+          path: master
+
+      # ============================================
+      # 2. CHECK OUT BRANCH 1
+      # ============================================
+      - name: Checkout Branch 1
+        uses: actions/checkout@v4
+        with:
+          repository: mobile-posapk/mobile-pos-branch-1
+          token: ${{ secrets.BRANCH_REPO_TOKEN }}
+          path: branch1
+          ref: main
+
+      # ============================================
+      # 3. COPY MASTER FILES TO BRANCH 1
+      # ============================================
+      - name: Copy Master Files
+        run: |
+          rsync -av \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            master/ branch1/
+
+      # ============================================
+      # 4. RESTORE BRANCH 1 API URL
+      # ============================================
+      - name: Restore Branch 1 API URL
+        env:
+          BRANCH_API_URL: "https://script.google.com/macros/s/AKfycbwXPoJ1VAIpqLEar3pAU0AOrp0XQkwcL8ovwcmj4553O3DgVPA87xrCE6QCojDaAtXAUw/exec"
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          import os
+
+          api_url = os.environ["BRANCH_API_URL"]
+
+          file = Path("branch1/index.html")
+
+          if file.exists():
+              text = file.read_text(encoding="utf-8")
+
+              pattern = r'const\s+API_URL\s*=\s*["\'][^"\']+["\']\s*;'
+
+              replacement = f'const API_URL = "{api_url}";'
+
+              new_text, count = re.subn(
+                  pattern,
+                  replacement,
+                  text,
+                  count=1
+              )
+
+              if count == 0:
+                  raise SystemExit(
+                      "Branch 1 API_URL was not found in index.html"
+                  )
+
+              file.write_text(
+                  new_text,
+                  encoding="utf-8"
+              )
+
+              print("Branch 1 API URL restored successfully.")
+          else:
+              raise SystemExit(
+                  "index.html was not found in Branch 1."
+              )
+          PY
+
+      # ============================================
+      # 5. COMMIT AND PUSH TO BRANCH 1
+      # ============================================
+      - name: Commit and Push Branch 1
+        working-directory: branch1
+        run: |
+          git config user.name "mobile-posapk"
+          git config user.email "mobile-posapk@users.noreply.github.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+          else
+            git commit -m "Update Branch 1 from Master"
+            git push origin main
+          fi
